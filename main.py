@@ -73,7 +73,7 @@ def search(track_to_match, spotify_session, album_ids, matched_tracks, unmatched
         unmatched_tracks.append(search_term)
         return matched_track, album_ids, matched_tracks, unmatched_tracks
 
-    if search_results.json()['tracks']['items']:
+    if search_results.json()['tracks']['items'] and normalize_text(search_results.json()['tracks']['items'][0]['artists'][0]['name']) in normalize_text(track_to_match['artist']):
         matched_track = search_results.json()['tracks']['items'][0]
     else:
         search_results = spotify_session.get('/v1/search', params={'q': normalize_text(track_to_match['name']), 'type': 'track', 'limit': 50})
@@ -83,15 +83,16 @@ def search(track_to_match, spotify_session, album_ids, matched_tracks, unmatched
             #and 
             (normalize_text(track_to_match['album']) in normalize_text(search_result['album']['name'])
                 or match_album==False)
-            and normalize_text(search_result['name']) in normalize_text(track_to_match['name'])
-            and normalize_text(search_result['artists'][0]['name']) in normalize_text(track_to_match['artist'])
+            and normalize_text(track_to_match['name']) in normalize_text(search_result['name'])
+            and normalize_text(track_to_match['artist']) in normalize_text(search_result['artists'][0]['name'])
             #and search_result['explicit'] == track_to_match['isExplicit']
             ):
             matched_track = search_result
         
         # try to group songs using same spotify album
-        if (search_result['album']['name'].lower() not in album_ids
-            or album_ids[search_result['album']['name'].lower()] == search_result['album']['id']):
+        if (normalize_text(track_to_match['artist']) not in album_ids
+            or album_ids[normalize_text(track_to_match['artist'])] == search_result['album']['id']):
+            album_ids[normalize_text(track_to_match['artist'])] = search_result['album']['id']
             break
 
     if matched_track:
