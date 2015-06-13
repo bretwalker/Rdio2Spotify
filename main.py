@@ -6,8 +6,8 @@ import sys
 import unicodedata
 from rauth import OAuth1Service, OAuth2Service
 
-rdio_consumer_key=''
-rdio_consumer_secret=''
+rdio_client_id=''
+rdio_client_secret=''
 spotify_client_id=''
 spotify_client_secret=''
 
@@ -17,25 +17,26 @@ def normalize_text(data):
     return re.sub(r'- .*$', '', re.sub(r'[\(\[][^)]*[\)\]]', '', unicodedata.normalize('NFKD', data.lower()).encode('ASCII', 'ignore'))).strip()
         
 def get_sessions():
-    rdio = OAuth1Service(
-        name='rdio',
-        consumer_key=rdio_consumer_key,
-        consumer_secret=rdio_consumer_secret,
-        request_token_url='http://api.rdio.com/oauth/request_token',
-        access_token_url='http://api.rdio.com/oauth/access_token',
-        authorize_url='https://www.rdio.com/oauth/authorize',
-        base_url='http://api.rdio.com/1/')
+    rdio = OAuth2Service(
+          name='rdio',
+          client_id=rdio_client_id,
+          client_secret=rdio_client_secret,
+          authorize_url='https://www.rdio.com/oauth2/authorize',
+          access_token_url='https://services.rdio.com/oauth2/token',
+          base_url='https://services.rdio.com/api/1/',)
 
-    rdio_request_token, rdio_request_token_secret = rdio.get_request_token(params={'oauth_callback': 'oob'})
-    rdio_authorize_url = rdio.get_authorize_url(rdio_request_token)
+    params={'response_type': 'code', 'redirect_uri': 'http://localhost/'}
+    rdio_authorize_url = rdio.get_authorize_url(**params)
 
     print 'Visit this URL in your browser: ' + rdio_authorize_url
-    rdio_pin = raw_input('Enter PIN from browser: ')
+    rdio_pin = raw_input('Enter code from URL: ')
 
-    rdio_session = rdio.get_auth_session(rdio_request_token,
-                                       rdio_request_token_secret,
-                                       method='POST',
-                                       data={'oauth_verifier': rdio_pin})    
+    rdio_session = rdio.get_auth_session(method='POST',
+                                         data={'code': rdio_pin, 
+                                               'grant_type': 'authorization_code',
+                                               'redirect_uri': 'http://localhost/',},
+                                         headers={'Authorization': 'Basic ' + base64.b64encode(rdio_client_id + ":" + rdio_client_secret)},
+                                         decoder=json.loads)
 
     spotify = OAuth2Service(
           name='spotify',
