@@ -5,6 +5,9 @@ import string
 import sys
 import unicodedata
 import time
+import BaseHTTPServer
+import SocketServer
+from urlparse import urlparse
 from rauth import OAuth1Service, OAuth2Service
 
 rdio_client_id=''
@@ -13,11 +16,27 @@ spotify_client_id=''
 spotify_client_secret=''
 
 page_size = 50
+redirect_port = 8123
 
 def normalize_text(data):
     return re.sub(r'- .*$', '', re.sub(r'[\(\[][^)]*[\)\]]', '', unicodedata.normalize('NFKD', data.lower()).encode('ASCII', 'ignore'))).strip()
-        
+
 def get_sessions():
+    redirect_uri = 'http://localhost:%d/' % redirect_port
+    class Handler(BaseHTTPServer.BaseHTTPRequestHandler):
+        def do_GET(s):
+            Handler.code = urlparse(s.path).query.split('=')[1]
+            s.send_response(200)
+            s.send_header("Content-type", "text/html")
+            s.end_headers()
+            s.wfile.write('<h3>Code received successfully</h3>')
+            s.wfile.write('<p>Please look back at the terminal.</p>')
+    httpd = SocketServer.TCPServer(("", redirect_port), Handler)
+    def wait_for_code():
+        httpd.handle_request()
+        sys.stdout.flush()
+        return Handler.code
+
     rdio = OAuth2Service(
           name='rdio',
           client_id=rdio_client_id,
@@ -26,16 +45,16 @@ def get_sessions():
           access_token_url='https://services.rdio.com/oauth2/token',
           base_url='https://services.rdio.com/api/1/',)
 
-    params={'response_type': 'code', 'redirect_uri': 'http://localhost/'}
+    params={'response_type': 'code', 'redirect_uri': redirect_uri}
     rdio_authorize_url = rdio.get_authorize_url(**params)
 
     print 'Visit this URL in your browser: ' + rdio_authorize_url
-    rdio_pin = raw_input('Enter code from URL: ')
+    rdio_pin = wait_for_code()
 
     rdio_session = rdio.get_auth_session(method='POST',
                                          data={'code': rdio_pin, 
                                                'grant_type': 'authorization_code',
-                                               'redirect_uri': 'http://localhost/',},
+                                               'redirect_uri': redirect_uri,},
                                          headers={'Authorization': 'Basic ' + base64.b64encode(rdio_client_id + ":" + rdio_client_secret)},
                                          decoder=json.loads)
 
@@ -51,12 +70,12 @@ def get_sessions():
     spotify_authorize_url = spotify.get_authorize_url(**params)
 
     print 'Visit this URL in your browser: ' + spotify_authorize_url
-    spotify_pin = raw_input('Enter code from URL: ')
+    spotify_pin = wait_for_code()
 
     spotify_session = spotify.get_auth_session(method='POST',
                                                data={'code': spotify_pin, 
                                                      'grant_type': 'authorization_code',
-                                                     'redirect_uri': 'http://localhost',},
+                                                     'redirect_uri': redirect_uri,},
                                                headers={'Authorization': 'Basic ' + base64.b64encode(spotify_client_id + ":" + spotify_client_secret)},
                                                decoder=json.loads)
 
@@ -86,6 +105,8 @@ def get_sessions():
             time.sleep(float(response.headers['retry-after']))
     spotify_session.orig_post = spotify_session.post
     spotify_session.post = spotify_post
+
+    httpd.server_close()
 
     return rdio_session, spotify_session
 
