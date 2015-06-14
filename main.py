@@ -4,6 +4,7 @@ import re
 import string
 import sys
 import unicodedata
+import time
 from rauth import OAuth1Service, OAuth2Service
 
 rdio_client_id=''
@@ -58,7 +59,34 @@ def get_sessions():
                                                      'redirect_uri': 'http://localhost',},
                                                headers={'Authorization': 'Basic ' + base64.b64encode(spotify_client_id + ":" + spotify_client_secret)},
                                                decoder=json.loads)
-                                                 
+
+    def spotify_get(url, **kwargs):
+        while True:
+            response = spotify_session.orig_get(url, **kwargs)
+            if response.status_code != 429 or not response.headers['retry-after']:
+                return response
+            time.sleep(float(response.headers['retry-after']))
+    spotify_session.orig_get = spotify_session.get
+    spotify_session.get = spotify_get
+
+    def spotify_put(url, data = None, **kwargs):
+        while True:
+            response = spotify_session.orig_put(url, data, **kwargs)
+            if response.status_code != 429 or not response.headers['retry-after']:
+                return response
+            time.sleep(float(response.headers['retry-after']))
+    spotify_session.orig_put = spotify_session.put
+    spotify_session.put = spotify_put
+
+    def spotify_post(url, data = None, json = None, **kwargs):
+        while True:
+            response = spotify_session.orig_post(url, data, json, **kwargs)
+            if response.status_code != 429 or not response.headers['retry-after']:
+                return response
+            time.sleep(float(response.headers['retry-after']))
+    spotify_session.orig_post = spotify_session.post
+    spotify_session.post = spotify_post
+
     return rdio_session, spotify_session
 
 def search(track_to_match, spotify_session, album_ids, matched_tracks, unmatched_tracks, match_album=False):
