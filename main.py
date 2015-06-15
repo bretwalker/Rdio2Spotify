@@ -79,30 +79,42 @@ def get_sessions():
                                                headers={'Authorization': 'Basic ' + base64.b64encode(spotify_client_id + ":" + spotify_client_secret)},
                                                decoder=json.loads)
 
+    spotify_refresh_token = spotify_session.access_token_response.json()['refresh_token']
+    def retry_if_possible(response):
+        if response.status_code == 429 and response.headers['retry-after']:
+            time.sleep(float(response.headers['retry-after']))
+            return True
+        if response.status_code == 401:
+            refresh = spotify.get_raw_access_token(data={'refresh_token':spotify_refresh_token,
+                                                         'grant_type': 'refresh_token'})
+            spotify_session.access_token = refresh.json()['access_token']
+            return True
+        return False
+
     def spotify_get(url, **kwargs):
         while True:
             response = spotify_session.orig_get(url, **kwargs)
-            if response.status_code != 429 or not response.headers['retry-after']:
-                return response
-            time.sleep(float(response.headers['retry-after']))
+            if retry_if_possible(response):
+                continue
+            return response
     spotify_session.orig_get = spotify_session.get
     spotify_session.get = spotify_get
 
     def spotify_put(url, data = None, **kwargs):
         while True:
             response = spotify_session.orig_put(url, data, **kwargs)
-            if response.status_code != 429 or not response.headers['retry-after']:
-                return response
-            time.sleep(float(response.headers['retry-after']))
+            if retry_if_possible(response):
+                continue
+            return response
     spotify_session.orig_put = spotify_session.put
     spotify_session.put = spotify_put
 
     def spotify_post(url, data = None, json = None, **kwargs):
         while True:
             response = spotify_session.orig_post(url, data, json, **kwargs)
-            if response.status_code != 429 or not response.headers['retry-after']:
-                return response
-            time.sleep(float(response.headers['retry-after']))
+            if retry_if_possible(response):
+                continue
+            return response
     spotify_session.orig_post = spotify_session.post
     spotify_session.post = spotify_post
 
