@@ -90,6 +90,8 @@ def get_sessions():
                                                          'grant_type': 'refresh_token'})
             spotify_session.access_token = refresh.json()['access_token']
             return True
+        if response.status_code / 100 == 5:
+            return True
         return False
 
     def spotify_get(url, **kwargs):
