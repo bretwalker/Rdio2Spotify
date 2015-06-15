@@ -217,7 +217,12 @@ def sync_collection_albums(rdio_session, spotify_session):
             else:
                 unmatched_albums.append(album['artist'] + ' ' + album['name'])
         
-        albums = rdio_session.post('', data={'method': 'getAlbumsInCollection', 'count': page_size*search_loop}, verify=True)
+        retries = 1
+        while retries < 10:
+            albums = rdio_session.post('', data={'method': 'getAlbumsInCollection', 'count': page_size*search_loop}, verify=True)
+            if albums.status_code == 200:
+                break
+            retries = retries + 1
         search_loop = search_loop + 1
 
     print ''
@@ -254,8 +259,13 @@ def sync_collection(rdio_session, spotify_session):
 
             sys.stdout.write('.')
             sys.stdout.flush()
-            
-        tracks = rdio_session.post('', data={'method': 'getTracksInCollection', 'count': page_size, 'start': page_size * search_loop}, verify=True)
+
+        retries = 1
+        while retries < 10:
+            tracks = rdio_session.post('', data={'method': 'getTracksInCollection', 'count': page_size, 'start': page_size * search_loop}, verify=True)
+            if tracks.status_code == 200:
+                break
+            retries = retries + 1
         search_loop = search_loop + 1
         
     print ''
