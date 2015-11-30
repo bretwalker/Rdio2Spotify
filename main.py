@@ -5,6 +5,7 @@ import string
 import sys
 import unicodedata
 import time
+import webbrowser
 import BaseHTTPServer
 import SocketServer
 from urlparse import urlparse
@@ -21,10 +22,17 @@ redirect_port = 8123
 def normalize_text(data):
     return re.sub(r'- .*$', '', re.sub(r'[\(\[][^)]*[\)\]]', '', unicodedata.normalize('NFKD', data.lower()).encode('ASCII', 'ignore'))).strip()
 
+
 def get_sessions():
     redirect_uri = 'http://localhost:%d/' % redirect_port
     class Handler(BaseHTTPServer.BaseHTTPRequestHandler):
+        code = None
+
         def do_GET(s):
+            Handler.code = None
+            if 'favicon' in s.path:
+                s.send_response(404)
+                return
             Handler.code = urlparse(s.path).query.split('=')[1]
             s.send_response(200)
             s.send_header("Content-type", "text/html")
@@ -32,10 +40,14 @@ def get_sessions():
             s.wfile.write('<h3>Code received successfully</h3>')
             s.wfile.write('<p>Please look back at the terminal.</p>')
     httpd = SocketServer.TCPServer(("", redirect_port), Handler)
+
     def wait_for_code():
-        httpd.handle_request()
-        sys.stdout.flush()
-        return Handler.code
+        while Handler.code is None:
+            httpd.handle_request()
+            sys.stdout.flush()
+        code = Handler.code
+        Handler.code = None
+        return code
 
     rdio = OAuth2Service(
           name='rdio',
@@ -48,11 +60,12 @@ def get_sessions():
     params={'response_type': 'code', 'redirect_uri': redirect_uri}
     rdio_authorize_url = rdio.get_authorize_url(**params)
 
-    print 'Visit this URL in your browser: ' + rdio_authorize_url
+    print 'Opening this URL in your browser: ' + rdio_authorize_url
+    webbrowser.open(rdio_authorize_url)
     rdio_pin = wait_for_code()
 
     rdio_session = rdio.get_auth_session(method='POST',
-                                         data={'code': rdio_pin, 
+                                         data={'code': rdio_pin,
                                                'grant_type': 'authorization_code',
                                                'redirect_uri': redirect_uri,},
                                          headers={'Authorization': 'Basic ' + base64.b64encode(rdio_client_id + ":" + rdio_client_secret)},
@@ -64,17 +77,18 @@ def get_sessions():
           client_secret=spotify_client_secret,
           authorize_url='https://accounts.spotify.com/authorize/',
           access_token_url='https://accounts.spotify.com/api/token',
-          base_url='https://api.spotify.com',)
+          base_url='https://api.spotify.com/',)
 
     params={'scope':'user-library-modify user-library-read playlist-read-private playlist-modify-public user-follow-modify', \
             'response_type': 'code', 'redirect_uri': redirect_uri}
     spotify_authorize_url = spotify.get_authorize_url(**params)
 
-    print 'Visit this URL in your browser: ' + spotify_authorize_url
+    print 'Opening this URL in your browser: ' + spotify_authorize_url
+    webbrowser.open(spotify_authorize_url)
     spotify_pin = wait_for_code()
 
     spotify_session = spotify.get_auth_session(method='POST',
-                                               data={'code': spotify_pin, 
+                                               data={'code': spotify_pin,
                                                      'grant_type': 'authorization_code',
                                                      'redirect_uri': redirect_uri,},
                                                headers={'Authorization': 'Basic ' + base64.b64encode(spotify_client_id + ":" + spotify_client_secret)},
@@ -130,7 +144,7 @@ def search(track_to_match, spotify_session, album_ids, matched_tracks, unmatched
     search_results = spotify_session.get('/v1/search', params={'q': search_term, 'type': 'track', 'limit': 50})
 
     matched_track = None
-    
+
     if search_results.status_code != 200:
         print search_results
         print search_results.text
@@ -142,10 +156,10 @@ def search(track_to_match, spotify_session, album_ids, matched_tracks, unmatched
         matched_track = search_results.json()['tracks']['items'][0]
     else:
         search_results = spotify_session.get('/v1/search', params={'q': normalize_text(track_to_match['name']), 'type': 'track', 'limit': 50})
-    
+
     for search_result in search_results.json()['tracks']['items']:
         if (#"US" in search_result['album']['available_markets']
-            #and 
+            #and
             (normalize_text(track_to_match['album']) in normalize_text(search_result['album']['name'])
                 or match_album==False)
             and normalize_text(track_to_match['name']) in normalize_text(search_result['name'])
@@ -153,7 +167,7 @@ def search(track_to_match, spotify_session, album_ids, matched_tracks, unmatched
             #and search_result['explicit'] == track_to_match['isExplicit']
             ):
             matched_track = search_result
-        
+
         # try to group songs using same spotify album
         if (normalize_text(track_to_match['artist']) not in album_ids
             or album_ids[normalize_text(track_to_match['artist'])] == search_result['album']['id']):
@@ -164,7 +178,7 @@ def search(track_to_match, spotify_session, album_ids, matched_tracks, unmatched
         matched_tracks.append(search_term)
     else:
         unmatched_tracks.append(search_term)
-    
+
     return matched_track, album_ids, matched_tracks, unmatched_tracks
 
 def sync_followed_artists(rdio_session, spotify_session):
@@ -230,10 +244,10 @@ def sync_collection_albums(rdio_session, spotify_session):
     if albums.status_code != 200:
         print albums.json()
         return
-    
+
     matched_albums = []
-    unmatched_albums = []        
-    
+    unmatched_albums = []
+
     search_loop = 2
     keep_processing = True
     while keep_processing:
@@ -244,7 +258,7 @@ def sync_collection_albums(rdio_session, spotify_session):
             sys.stdout.write('.')
             sys.stdout.flush()
             matched_album = None
-            
+
             search_results = spotify_session.get('/v1/search', params={'q': normalize_text(album['artist'] + ' ' + album['name']), 'type': 'album', 'limit': 50})
 
             if search_results.json()['albums']['items']:
@@ -256,25 +270,25 @@ def sync_collection_albums(rdio_session, spotify_session):
                     and search_result['album_type'] == 'album'):
                     matched_album = search_result
                     break
-                    
+
             if matched_album:
                 album_tracks = spotify_session.get('v1/albums/%s/tracks' % matched_album['id'])
                 if album_tracks.status_code != 200:
                     unmatched_albums.append(album['artist'] + ' ' + album['name'])
                     print album_tracks.json()
                     continue
-                
+
                 track_ids = []
                 for album_track in album_tracks.json()['items']:
                     track_ids.append(album_track['id'])
-                
+
                 if len(track_ids) > 0:
                     spotify_session.put('/v1/me/tracks?ids=%s' % ','.join(track_ids))
-                
+
                 matched_albums.append(album['artist'] + ' ' + album['name'])
             else:
                 unmatched_albums.append(album['artist'] + ' ' + album['name'])
-        
+
         retries = 1
         while retries < 10:
             albums = rdio_session.post('', data={'method': 'getAlbumsInCollection', 'count': page_size*search_loop}, verify=True)
@@ -288,11 +302,11 @@ def sync_collection_albums(rdio_session, spotify_session):
     print '\n'.join(matched_albums)
     print ''
     print 'Unmatched albums: '
-    print '\n'.join(unmatched_albums)    
+    print '\n'.join(unmatched_albums)
 
 def sync_collection(rdio_session, spotify_session):
     print 'Syncing collection'
-                                
+
     tracks = rdio_session.post('', data={'method': 'getTracksInCollection', 'count': page_size}, verify=True)
 
     if tracks.status_code != 200:
@@ -301,17 +315,17 @@ def sync_collection(rdio_session, spotify_session):
 
     matched_tracks = []
     unmatched_tracks = []
-    
+
     search_loop = 2
     album_ids = {}
     keep_processing = True
     while keep_processing:
         if len(tracks.json()['result']) < page_size:
             keep_processing = False
-            
+
         for track in tracks.json()['result']:
             matched_track, album_ids, matched_tracks, unmatched_tracks = search(track, spotify_session, album_ids, matched_tracks, unmatched_tracks, True)
-            
+
             if matched_track:
                 spotify_session.put('/v1/me/tracks', params={'ids': matched_track['id']})
 
@@ -325,7 +339,7 @@ def sync_collection(rdio_session, spotify_session):
                 break
             retries = retries + 1
         search_loop = search_loop + 1
-        
+
     print ''
     print 'Matched tracks: '
     print '\n'.join(matched_tracks)
@@ -335,30 +349,30 @@ def sync_collection(rdio_session, spotify_session):
 
 def sync_playlists(rdio_session, spotify_session):
     print 'Syncing playlists'
-    
+
     rdio_playlists = rdio_session.post('', data={'method': 'getPlaylists', 'extras': 'tracks'}, verify=True)
 
     if rdio_playlists.status_code != 200:
         print rdio_playlists.json()
         return
-        
+
     rdio_playlists = rdio_playlists.json()
     if 'result' not in rdio_playlists or 'owned' not in rdio_playlists['result'] or 'subscribed' not in rdio_playlists['result']:
         print 'No owned or subscribed playlists'
     else:
         spotify_id = spotify_session.get('/v1/me').json()['id']
         spotify_playlists = spotify_session.get('/v1/users/%s/playlists' % spotify_id)
-        
+
         if spotify_playlists.status_code != 200:
             print spotify_playlists.json()
             return
-        
+
         rdio_playlists_to_process = []
         if 'owned' in rdio_playlists['result']:
             rdio_playlists_to_process = rdio_playlists_to_process + rdio_playlists['result']['owned']
         if 'subscribed' in rdio_playlists['result']:
             rdio_playlists_to_process= rdio_playlists_to_process + rdio_playlists['result']['subscribed']
-        
+
         spotify_playlists = spotify_playlists.json()
         for rdio_playlist in rdio_playlists_to_process:
             existing_spotify_playlist = None
@@ -366,28 +380,28 @@ def sync_playlists(rdio_session, spotify_session):
                 if spotify_playlist['name'] == rdio_playlist['name']:
                     existing_spotify_playlist = spotify_playlist
                     break
-            
+
             if not existing_spotify_playlist:
                 # set existing_spotify_playlist to a new playlist
                 existing_spotify_playlist = spotify_session.post('/v1/users/%s/playlists' % spotify_id,
                                                                  json={'name': rdio_playlist['name']})
-                                                                 
+
                 if existing_spotify_playlist.status_code > 201:
                     print existing_spotify_playlist.json()
                     return
-            
+
                 existing_spotify_playlist = existing_spotify_playlist.json()
- 
+
             matched_tracks = []
             unmatched_tracks = []
             album_ids = {}
             track_uris = []
             did_first_hundred = False
-            
+
             last_track = rdio_playlist['tracks'][-1]
             for rdio_track in rdio_playlist['tracks']:
                 matched_track, album_ids, matched_tracks, unmatched_tracks = search(rdio_track, spotify_session, album_ids, matched_tracks, unmatched_tracks)
-                                                            
+
                 if matched_track:
                     # can't really update playlists easily, so replace all contents with fist 100 songs, then keep appending
                     if not did_first_hundred:
@@ -404,41 +418,41 @@ def sync_playlists(rdio_session, spotify_session):
 
                 sys.stdout.write('.')
                 sys.stdout.flush()
-            
+
             print ''
             print 'Matched tracks: '
             print '\n'.join(matched_tracks)
             print ''
             print 'Unmatched tracks: '
             print '\n'.join(unmatched_tracks)
-            
-                        
+
+
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    
+
     parser.add_argument('-t', action='store_const', dest='tracks',
                         const=True, help='Sync collection by tracks')
 
     parser.add_argument('-a', action='store_const', dest='albums',
                         const=True, help='Sync collection by full albums')
-                        
+
     parser.add_argument('-p', action='store_const', dest='playlists',
-                        const=True, help='Sync owned and subscribed playlists')                        
-                                                                    
+                        const=True, help='Sync owned and subscribed playlists')
+
     parser.add_argument('-f', action='store_const', dest='followed',
                         const=True, help='Sync followed artists')
 
     results = parser.parse_args()
-    
+
     if not results.tracks and not results.albums and \
        not results.playlists and not results.followed:
         parser.print_help()
         sys.exit(1)
     else:
         rdio_session, spotify_session = get_sessions()
-    
+
     if results.tracks:
         sync_collection(rdio_session, spotify_session)
     if results.albums:
@@ -447,4 +461,3 @@ if __name__ == "__main__":
         sync_playlists(rdio_session, spotify_session)
     if results.followed:
         sync_followed_artists(rdio_session, spotify_session)
-
