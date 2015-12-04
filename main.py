@@ -239,7 +239,7 @@ def sync_followed_artists(rdio_session, spotify_session):
 def sync_collection_albums(rdio_session, spotify_session):
     print 'Syncing collection albums'
 
-    albums = rdio_session.post('', data={'method': 'getAlbumsInCollection', 'count': page_size}, verify=True)
+    albums = rdio_session.post('', data={'method': 'getAlbumsInCollection', 'count': page_size, 'start': 0}, verify=True)
 
     if albums.status_code != 200:
         print albums.json()
@@ -291,7 +291,7 @@ def sync_collection_albums(rdio_session, spotify_session):
 
         retries = 1
         while retries < 10:
-            albums = rdio_session.post('', data={'method': 'getAlbumsInCollection', 'count': page_size*search_loop}, verify=True)
+            albums = rdio_session.post('', data={'method': 'getAlbumsInCollection', 'count': page_size, 'start': page_size*search_loop}, verify=True)
             if albums.status_code == 200:
                 break
             retries = retries + 1
