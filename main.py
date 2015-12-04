@@ -24,7 +24,7 @@ def normalize_text(data):
 
 
 def get_sessions():
-    redirect_uri = 'http://localhost:%d/' % redirect_port
+    redirect_uri = 'http://127.0.0.1:%d/' % redirect_port
     class Handler(BaseHTTPServer.BaseHTTPRequestHandler):
         code = None
 
